@@ -108,7 +108,7 @@ func New(ctx context.Context, ls stores.LocalStorage, si stores.SectorIndex, cfg
 	go m.sched.runSched()
 
 	localTasks := []sealtasks.TaskType{
-		sealtasks.TTAddPiece, sealtasks.TTCommit1, sealtasks.TTFinalize, sealtasks.TTFetch,
+		sealtasks.TTAddPiece, sealtasks.TTCommit1, sealtasks.TTFinalize,sealtasks.TTComplete,sealtasks.TTFetch,
 	}
 	if sc.AllowPreCommit1 {
 		localTasks = append(localTasks, sealtasks.TTPreCommit1)
@@ -300,6 +300,19 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID) error
 		schedFetch(sector, stores.FTCache|stores.FTSealed|stores.FTUnsealed, false),
 		func(ctx context.Context, w Worker) error {
 			return w.FinalizeSector(ctx, sector)
+		})
+}
+
+func (m *Manager) Complete(ctx context.Context, sector abi.SectorID) error {
+	selector, err := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed)
+	if err != nil {
+		return xerrors.Errorf("creating path selector: %w", err)
+	}
+
+	return m.sched.Schedule(ctx, sector, sealtasks.TTComplete, selector,
+		schedFetch(sector, stores.FTCache|stores.FTSealed, false),
+		func(ctx context.Context, w Worker) error {
+			return w.Complete(ctx, sector)
 		})
 }
 
