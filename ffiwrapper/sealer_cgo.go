@@ -308,6 +308,15 @@ func (sb *Sealer) FinalizeSector(ctx context.Context, sector abi.SectorID) error
 	return ffi.ClearCache(uint64(sb.ssize), paths.Cache)
 }
 
+func (sb *Sealer) Complete(ctx context.Context, sector abi.SectorID) error {
+	_, done, err := sb.sectors.AcquireSector(ctx, sector, stores.FTNone, stores.FTCache|stores.FTSealed, false)
+	if err != nil {
+		return xerrors.Errorf("acquiring sector cache and sealed path: %w", err)
+	}
+	defer done()
+	return nil
+}
+
 func GeneratePieceCIDFromFile(proofType abi.RegisteredProof, piece io.Reader, pieceSize abi.UnpaddedPieceSize) (cid.Cid, error) {
 	f, werr, err := toReadableFile(piece, int64(pieceSize))
 	if err != nil {

@@ -250,12 +250,17 @@ func (st *Local) AcquireSector(ctx context.Context, sid abi.SectorID, spt abi.Re
 		var bestID ID
 
 		for _, si := range sis {
+
+			log.Warnf("checking best alloc: %+v", si)
+
 			p, ok := st.paths[si.ID]
 			if !ok {
+				log.Warnf("paths not found")
 				continue
 			}
 
 			if p.local == "" { // TODO: can that even be the case?
+				log.Warnf("local is empty")
 				continue
 			}
 
