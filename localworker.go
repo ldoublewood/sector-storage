@@ -174,13 +174,30 @@ func (l *LocalWorker) FinalizeSector(ctx context.Context, sector abi.SectorID) e
 		return xerrors.Errorf("removing unsealed data: %w", err)
 	}
 
-	if err := l.storage.MoveStorage(ctx, sector, l.scfg.SealProofType, stores.FTSealed|stores.FTCache); err != nil {
-		return xerrors.Errorf("moving sealed data to storage: %w", err)
-	}
+	//if err := l.storage.MoveStorage(ctx, sector, l.scfg.SealProofType, stores.FTSealed|stores.FTCache); err != nil {
+	//	return xerrors.Errorf("moving sealed data to storage: %w", err)
+	//}
 
 	return nil
 }
 
+
+func (l *LocalWorker) Complete(ctx context.Context, sector abi.SectorID) error {
+	sb, err := l.sb()
+	if err != nil {
+		return err
+	}
+
+	if err := sb.FinalizeSector(ctx, sector); err != nil {
+		return xerrors.Errorf("finalizing sector: %w", err)
+	}
+
+	if err := l.storage.Remove(ctx, sector, stores.FTUnsealed, true); err != nil {
+		return xerrors.Errorf("removing unsealed data: %w", err)
+	}
+
+	return nil
+}
 func (l *LocalWorker) TaskTypes(context.Context) (map[sealtasks.TaskType]struct{}, error) {
 	return l.acceptTasks, nil
 }
