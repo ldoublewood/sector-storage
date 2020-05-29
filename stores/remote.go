@@ -101,6 +101,9 @@ func (r *Remote) AcquireSector(ctx context.Context, s abi.SectorID, spt abi.Regi
 			log.Warnf("declaring sector %v in %s failed: %+v", s, storageID, err)
 			continue
 		}
+//                if err := r.index.StorageDropSector(ctx, storageID, s, fileType); err != nil {
+//                        log.Warnf("dropping source sector from index: %w", err)
+//                }
 
 		// TODO: some way to allow having duplicated sectors in the system for perf
 		if err := r.deleteFromRemote(ctx, url); err != nil {
