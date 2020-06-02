@@ -309,11 +309,12 @@ func (sb *Sealer) FinalizeSector(ctx context.Context, sector abi.SectorID) error
 }
 
 func (sb *Sealer) Complete(ctx context.Context, sector abi.SectorID) error {
-	_, done, err := sb.sectors.AcquireSector(ctx, sector, stores.FTNone, stores.FTCache|stores.FTSealed, false)
-	if err != nil {
-		return xerrors.Errorf("acquiring sector cache and sealed path: %w", err)
-	}
-	defer done()
+	//_, done, err := sb.sectors.AcquireSector(ctx, sector, stores.FTNone, stores.FTCache|stores.FTSealed, false)
+	//if err != nil {
+	//	return xerrors.Errorf("acquiring sector cache and sealed path: %w", err)
+	//}
+	//defer done()
+	log.Warn("Dummy complete")
 	return nil
 }
 

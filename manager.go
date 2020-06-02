@@ -108,7 +108,7 @@ func New(ctx context.Context, ls stores.LocalStorage, si stores.SectorIndex, cfg
 	go m.sched.runSched()
 
 	localTasks := []sealtasks.TaskType{
-		sealtasks.TTAddPiece, sealtasks.TTCommit1, sealtasks.TTFinalize,sealtasks.TTComplete,sealtasks.TTFetch,
+		sealtasks.TTAddPiece, sealtasks.TTCommit1, sealtasks.TTFinalize,sealtasks.TTFetch,
 	}
 	if sc.AllowPreCommit1 {
 		localTasks = append(localTasks, sealtasks.TTPreCommit1)
@@ -304,7 +304,7 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID) error
 }
 
 func (m *Manager) Complete(ctx context.Context, sector abi.SectorID) error {
-	selector, err := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed)
+	selector, err := newExistingSelector(ctx, m.index, sector, stores.FTCache|stores.FTSealed, false)
 	if err != nil {
 		return xerrors.Errorf("creating path selector: %w", err)
 	}
