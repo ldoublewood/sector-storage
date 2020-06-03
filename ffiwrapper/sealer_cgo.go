@@ -461,6 +461,11 @@ func (sb *Sealer) FinalizeSector(ctx context.Context, sector abi.SectorID) error
 	return ffi.ClearCache(uint64(sb.ssize), paths.Cache)
 }
 
+func (sb *Sealer) Complete(ctx context.Context, sector abi.SectorID) error {
+	log.Warn("Dummy complete")
+	return nil
+}
+
 func GeneratePieceCIDFromFile(proofType abi.RegisteredProof, piece io.Reader, pieceSize abi.UnpaddedPieceSize) (cid.Cid, error) {
 	f, werr, err := ToReadableFile(piece, int64(pieceSize))
 	if err != nil {

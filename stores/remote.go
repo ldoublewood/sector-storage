@@ -98,8 +98,8 @@ func (r *Remote) AcquireSector(ctx context.Context, s abi.SectorID, spt abi.Regi
 
 		ap, storageID, url, rdone, err := r.acquireFromRemote(ctx, s, spt, fileType, pathType, op)
 		if err != nil {
-			done()
-			return SectorPaths{}, SectorPaths{}, nil, err
+			log.Warnf("acquire from remote: %+v", err)
+			continue
 		}
 
 		done = mergeDone(done, rdone)
