@@ -366,7 +366,7 @@ func (m *Manager) Complete(ctx context.Context, sector abi.SectorID) error {
 	}
 
 	return m.sched.Schedule(ctx, sector, sealtasks.TTComplete, selector,
-		schedFetch(sector, stores.FTCache|stores.FTSealed, false),
+		schedFetch(sector, stores.FTCache|stores.FTSealed, false,  stores.AcquireMove),
 		func(ctx context.Context, w Worker) error {
 			return w.Complete(ctx, sector)
 		})
