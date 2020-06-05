@@ -464,9 +464,19 @@ func (sb *Sealer) FinalizeSector(ctx context.Context, sector abi.SectorID) error
 func (sb *Sealer) Complete(ctx context.Context, sector abi.SectorID) error {
 	if storageid, ok := os.LookupEnv("SHARED_MINER_STORAGE_ID"); ok {
 		log.Warn("env SHARED_MINER_STORAGE_ID is set, so declare shared sector, please be sure path of worker is mounted from miner ")
-		sb.sectors.DeclareSharedSector(ctx, storageid, sector)
+		err := sb.sectors.DeclareSharedSector(ctx, storageid, sector)
+		if err != nil {
+			return xerrors.Errorf("declare shared sector: %w", err)
+		}
 		return nil
 	}
+	_, done, err := sb.sectors.AcquireSector(ctx, sector, stores.FTNone, stores.FTCache|stores.FTSealed, false)
+	if err != nil {
+		return xerrors.Errorf("acquiring sector cache and sealed path: %w", err)
+	}
+	defer done()
+	return nil
+
 }
 func GeneratePieceCIDFromFile(proofType abi.RegisteredProof, piece io.Reader, pieceSize abi.UnpaddedPieceSize) (cid.Cid, error) {
 	f, werr, err := ToReadableFile(piece, int64(pieceSize))
