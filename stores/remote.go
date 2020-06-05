@@ -239,6 +239,13 @@ func (r *Remote) Remove(ctx context.Context, sid abi.SectorID, typ SectorFileTyp
 	}
 
 	for _, info := range si {
+		if storageid, ok := os.LookupEnv("SHARED_MINER_STORAGE_ID"); ok {
+			if storageid == string(info.ID) {
+				log.Warn("env SHARED_MINER_STORAGE_ID is set, so ignore remove command on such storage")
+				continue
+			}
+		}
+
 		for _, url := range info.URLs {
 			if err := r.deleteFromRemote(ctx, url); err != nil {
 				log.Warnf("remove %s: %+v", url, err)
