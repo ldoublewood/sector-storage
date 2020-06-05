@@ -24,3 +24,7 @@ func (l *readonlyProvider) AcquireSector(ctx context.Context, id abi.SectorID, e
 
 	return p, done, err
 }
+
+func (l *readonlyProvider) DeclareSharedSector(ctx context.Context, storageid string, id abi.SectorID) (error) {
+	return xerrors.New("read-only storage")
+}

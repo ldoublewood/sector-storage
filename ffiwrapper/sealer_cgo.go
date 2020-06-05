@@ -462,10 +462,12 @@ func (sb *Sealer) FinalizeSector(ctx context.Context, sector abi.SectorID) error
 }
 
 func (sb *Sealer) Complete(ctx context.Context, sector abi.SectorID) error {
-	log.Warn("Dummy complete")
-	return nil
+	if storageid, ok := os.LookupEnv("SHARED_MINER_STORAGE_ID"); ok {
+		log.Warn("env SHARED_MINER_STORAGE_ID is set, so declare shared sector, please be sure path of worker is mounted from miner ")
+		sb.sectors.DeclareSharedSector(ctx, storageid, sector)
+		return nil
+	}
 }
-
 func GeneratePieceCIDFromFile(proofType abi.RegisteredProof, piece io.Reader, pieceSize abi.UnpaddedPieceSize) (cid.Cid, error) {
 	f, werr, err := ToReadableFile(piece, int64(pieceSize))
 	if err != nil {

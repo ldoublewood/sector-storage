@@ -44,6 +44,7 @@ type SectorProvider interface {
 	// * returns storiface.ErrSectorNotFound if a requested existing sector doesn't exist
 	// * returns an error when allocate is set, and existing isn't, and the sector exists
 	AcquireSector(ctx context.Context, id abi.SectorID, existing stores.SectorFileType, allocate stores.SectorFileType, sealing bool) (stores.SectorPaths, func(), error)
+	DeclareSharedSector(ctx context.Context, storageid string, id abi.SectorID) (error)
 }
 
 var _ SectorProvider = &basicfs.Provider{}

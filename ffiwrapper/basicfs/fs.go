@@ -84,3 +84,7 @@ func (b *Provider) AcquireSector(ctx context.Context, id abi.SectorID, existing 
 
 	return out, done, nil
 }
+
+func (b *Provider) DeclareSharedSector(ctx context.Context, storageid string, id abi.SectorID) (error) {
+	return nil
+}

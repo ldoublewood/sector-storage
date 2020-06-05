@@ -84,6 +84,15 @@ func (l *localWorkerPathProvider) AcquireSector(ctx context.Context, sector abi.
 	}, nil
 }
 
+func (l *localWorkerPathProvider) DeclareSharedSector(ctx context.Context, storageid string, id abi.SectorID) (error) {
+	if err := l.w.sindex.StorageDeclareSector(ctx, stores.ID(storageid), id, stores.FTCache|stores.FTSealed, true); err != nil {
+		log.Errorf("declare shared sector error: %+v", err)
+		return err
+	}
+	return nil
+}
+
+
 func (l *LocalWorker) sb() (ffiwrapper.Storage, error) {
 	return ffiwrapper.New(&localWorkerPathProvider{w: l}, l.scfg)
 }
