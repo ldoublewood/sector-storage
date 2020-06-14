@@ -344,7 +344,7 @@ func (a *activeResources) withResources(spt abi.RegisteredSealProof, id WorkerID
 func (a *activeResources) add(wr storiface.WorkerResources, r Resources) {
 	a.gpuUsed = r.CanGPU
 	if r.MultiThread() {
-		a.cpuUse += wr.CPUs
+		a.cpuUse += wr.CPUs - 2
 	} else {
 		a.cpuUse += uint64(r.Threads)
 	}
@@ -358,7 +358,7 @@ func (a *activeResources) free(wr storiface.WorkerResources, r Resources) {
 		a.gpuUsed = false
 	}
 	if r.MultiThread() {
-		a.cpuUse -= wr.CPUs
+		a.cpuUse -= wr.CPUs - 2
 	} else {
 		a.cpuUse -= uint64(r.Threads)
 	}
