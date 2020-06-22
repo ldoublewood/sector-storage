@@ -3,7 +3,9 @@ package sectorstorage
 import (
 	"container/heap"
 	"context"
+	"os"
 	"sort"
+	"strconv"
 	"sync"
 
 	"github.com/hashicorp/go-multierror"
@@ -344,7 +346,9 @@ func (a *activeResources) withResources(spt abi.RegisteredSealProof, id WorkerID
 func (a *activeResources) add(wr storiface.WorkerResources, r Resources) {
 	a.gpuUsed = r.CanGPU
 	if r.MultiThread() {
-		a.cpuUse += wr.CPUs - 2
+		if os.Getenv("SEAL_USE_GPU") != "_yes_" {
+			a.cpuUse += wr.CPUs - getMinusCpu()
+		}
 	} else {
 		a.cpuUse += uint64(r.Threads)
 	}
@@ -358,13 +362,31 @@ func (a *activeResources) free(wr storiface.WorkerResources, r Resources) {
 		a.gpuUsed = false
 	}
 	if r.MultiThread() {
-		a.cpuUse -= wr.CPUs - 2
+		if os.Getenv("SEAL_USE_GPU") != "_yes_" {
+			a.cpuUse -= wr.CPUs - getMinusCpu()
+		}
 	} else {
 		a.cpuUse -= uint64(r.Threads)
 	}
 
 	a.memUsedMin -= r.MinMemory
 	a.memUsedMax -= r.MaxMemory
+}
+func getMinusCpu() uint64 {
+	var minusCpuNum int
+	var err error
+	// use cpu by default
+	minusCpu, ok := os.LookupEnv("SEAL_MINUS_CPU")
+	if !ok {
+		minusCpuNum = 0
+	} else {
+		minusCpuNum, err = strconv.Atoi(minusCpu)
+		if err != nil {
+			log.Warnf("invalid minus cpu number %+v", err)
+			minusCpuNum = 0
+		}
+	}
+	return uint64(minusCpuNum)
 }
 
 func canHandleRequest(needRes Resources, spt abi.RegisteredSealProof, wid WorkerID, res storiface.WorkerResources, active *activeResources) bool {
@@ -390,8 +412,19 @@ func canHandleRequest(needRes Resources, spt abi.RegisteredSealProof, wid Worker
 
 	var needCpu uint64 = 0
 	if needRes.MultiThread() {
-		// should be same as rust code
-		needCpu = res.CPUs - 2
+		if os.Getenv("SEAL_USE_GPU") != "_yes_" {
+			// should be same as rust code
+			needCpu = res.CPUs - getMinusCpu()
+
+		} else {
+			if len(res.GPUs) > 0 && needRes.CanGPU {
+				if active.gpuUsed {
+					log.Debugf("sched: not scheduling on worker %d; GPU in use", wid)
+					return false
+				}
+			}
+			needCpu = 0
+		}
 	} else {
 		needCpu = uint64(needRes.Threads)
 	}
@@ -399,13 +432,6 @@ func canHandleRequest(needRes Resources, spt abi.RegisteredSealProof, wid Worker
 	if active.cpuUse+needCpu > res.CPUs {
 		log.Debugf("sched: not scheduling on worker %d; not enough threads, need %d, %d in use, target %d", wid, needRes.Threads, active.cpuUse, res.CPUs)
 		return false
-	}
-
-	if len(res.GPUs) > 0 && needRes.CanGPU {
-		if active.gpuUsed {
-			log.Debugf("sched: not scheduling on worker %d; GPU in use", wid)
-			return false
-		}
 	}
 
 	return true
