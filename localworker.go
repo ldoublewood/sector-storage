@@ -173,6 +173,22 @@ func (l *LocalWorker) FinalizeSector(ctx context.Context, sector abi.SectorID) e
 	if err := l.storage.Remove(ctx, sector, stores.FTUnsealed, true); err != nil {
 		return xerrors.Errorf("removing unsealed data: %w", err)
 	}
+	if err := l.storage.Remove(ctx, sector, stores.FTCache, true); err != nil {
+		return xerrors.Errorf("removing cache data: %w", err)
+	}
+	if err := l.storage.Remove(ctx, sector, stores.FTSealed, true); err != nil {
+		return xerrors.Errorf("removing sealed data: %w", err)
+	}
+
+	storageid, ok := os.LookupEnv("SHARED_MINER_STORAGE_ID")
+	if ok {
+		log.Warn("env SHARED_MINER_STORAGE_ID is set, so declare shared sector, please be sure share store is mounted from miner ")
+	}
+
+	err = l.sindex.StorageDeclareSector(ctx, ID(storageid), sector, stores.FTUnsealed|stores.FTCache|stores.FTSealed, true)
+	if err != nil {
+	  return xerrors.Errorf("declare shared sector: %w", err)
+	}
 
 	return nil
 }
