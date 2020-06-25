@@ -185,7 +185,7 @@ func (l *LocalWorker) FinalizeSector(ctx context.Context, sector abi.SectorID) e
 		log.Warn("env SHARED_MINER_STORAGE_ID is set, so declare shared sector, please be sure share store is mounted from miner ")
 	}
 
-	err = l.sindex.StorageDeclareSector(ctx, ID(storageid), sector, stores.FTUnsealed|stores.FTCache|stores.FTSealed, true)
+	err = l.sindex.StorageDeclareSector(ctx, stores.ID(storageid), sector, stores.FTUnsealed|stores.FTCache|stores.FTSealed, true)
 	if err != nil {
 	  return xerrors.Errorf("declare shared sector: %w", err)
 	}
