@@ -532,7 +532,7 @@ func (sb *Sealer) SealCommit2(ctx context.Context, sector abi.SectorID, phase1Ou
 }
 
 func (sb *Sealer) FinalizeSector(ctx context.Context, sector abi.SectorID) error {
-	paths, done, err := sb.sectors.AcquireSector(ctx, sector, stores.FTCache, 0, false)
+	paths, done, err := sb.sectors.AcquireSector(ctx, sector, stores.FTCache|stores.FTSealed, 0, false)
 	if err != nil {
 		return xerrors.Errorf("acquiring sector cache path: %w", err)
 	}
@@ -544,7 +544,7 @@ func (sb *Sealer) FinalizeSector(ctx context.Context, sector abi.SectorID) error
 	}
 
 	if sb.mc != nil {
-		return sb.uploadToStore(paths)
+		return sb.uploadToStore(paths, sector)
 	}
 	return nil
 }
@@ -566,7 +566,7 @@ func ensureBucketExist(mc *minio.Client, bucket string) error {
 	return nil
 }
 
-func (sb *Sealer) uploadToStore(paths stores.SectorPaths) error {
+func (sb *Sealer) uploadToStore(paths stores.SectorPaths, sector abi.SectorID) error {
 	var err error
 
 	files, err := ioutil.ReadDir(paths.Cache)
@@ -575,13 +575,13 @@ func (sb *Sealer) uploadToStore(paths stores.SectorPaths) error {
 	}
 
 	for _, file := range files {
-		if _, err = sb.mc.FPutObject(stores.FTCache.String(), filepath.Join(stores.SectorName(paths.Id), file.Name()), filepath.Join(paths.Cache, file.Name()), minio.PutObjectOptions{}); err != nil {
+		if _, err = sb.mc.FPutObject(stores.FTCache.String(), filepath.Join(stores.SectorName(sector), file.Name()), filepath.Join(paths.Cache, file.Name()), minio.PutObjectOptions{}); err != nil {
 			return xerrors.Errorf("putting object to cache bucket: %w", err)
 		}
 	}
 
 
-	if _, err = sb.mc.FPutObject(stores.FTSealed.String(), stores.SectorName(paths.Id), paths.Sealed, minio.PutObjectOptions{}); err != nil {
+	if _, err = sb.mc.FPutObject(stores.FTSealed.String(), stores.SectorName(sector), paths.Sealed, minio.PutObjectOptions{}); err != nil {
 		return xerrors.Errorf("putting object to sealed bucket: %w", err)
 	}
 
