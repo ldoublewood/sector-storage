@@ -53,6 +53,13 @@ func New(sectors SectorProvider, cfg *Config) (*Sealer, error) {
 		if err != nil {
 			return nil, xerrors.Errorf("initialize minio client: %w", err)
 		}
+
+		for _, pt := range stores.PathTypes {
+			err = ensureBucketExist(mc, pt.String())
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	sb := &Sealer{
 		sealProofType: cfg.SealProofType,
@@ -542,8 +549,8 @@ func (sb *Sealer) FinalizeSector(ctx context.Context, sector abi.SectorID) error
 	return nil
 }
 
-func (sb *Sealer) ensureBucketExist(bucket string) error {
-	found, err := sb.mc.BucketExists(bucket)
+func ensureBucketExist(mc *minio.Client, bucket string) error {
+	found, err := mc.BucketExists(bucket)
 	if err != nil {
 		return xerrors.Errorf("checking bucket exists: %w", err)
 	}
@@ -551,7 +558,7 @@ func (sb *Sealer) ensureBucketExist(bucket string) error {
 	if found {
 		log.Warn("bucket exist: %s", bucket)
 	} else {
-		err = sb.mc.MakeBucket(bucket, "")
+		err = mc.MakeBucket(bucket, "")
 		if err != nil {
 			return xerrors.Errorf("creating bucket: %w", err)
 		}
@@ -561,12 +568,6 @@ func (sb *Sealer) ensureBucketExist(bucket string) error {
 
 func (sb *Sealer) uploadToStore(paths stores.SectorPaths) error {
 	var err error
-	cacheBucket := filepath.Join(stores.FTCache.String(), stores.SectorName(paths.Id))
-
-	err = sb.ensureBucketExist(cacheBucket)
-	if err != nil {
-		return err
-	}
 
 	files, err := ioutil.ReadDir(paths.Cache)
 	if err != nil {
@@ -574,20 +575,13 @@ func (sb *Sealer) uploadToStore(paths stores.SectorPaths) error {
 	}
 
 	for _, file := range files {
-		if _, err = sb.mc.FPutObject(cacheBucket, file.Name(), filepath.Join(paths.Cache, file.Name()), minio.PutObjectOptions{}); err != nil {
+		if _, err = sb.mc.FPutObject(stores.FTCache.String(), filepath.Join(stores.SectorName(paths.Id), file.Name()), filepath.Join(paths.Cache, file.Name()), minio.PutObjectOptions{}); err != nil {
 			return xerrors.Errorf("putting object to cache bucket: %w", err)
 		}
 	}
 
 
-	sealedBucket := filepath.Join(stores.FTSealed.String(), stores.SectorName(paths.Id))
-
-	err = sb.ensureBucketExist(sealedBucket)
-	if err != nil {
-		return err
-	}
-
-	if _, err = sb.mc.FPutObject(sealedBucket, stores.SectorName(paths.Id), paths.Sealed, minio.PutObjectOptions{}); err != nil {
+	if _, err = sb.mc.FPutObject(stores.FTSealed.String(), stores.SectorName(paths.Id), paths.Sealed, minio.PutObjectOptions{}); err != nil {
 		return xerrors.Errorf("putting object to sealed bucket: %w", err)
 	}
 
