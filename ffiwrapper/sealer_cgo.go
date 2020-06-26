@@ -54,7 +54,8 @@ func New(sectors SectorProvider, cfg *Config) (*Sealer, error) {
 			return nil, xerrors.Errorf("initialize minio client: %w", err)
 		}
 
-		for _, pt := range stores.PathTypes {
+		var pathTypes = []stores.SectorFileType{stores.FTSealed, stores.FTCache}
+		for _, pt := range pathTypes {
 			err = ensureBucketExist(mc, pt.String())
 			if err != nil {
 				return nil, err
@@ -555,13 +556,8 @@ func ensureBucketExist(mc *minio.Client, bucket string) error {
 		return xerrors.Errorf("checking bucket exists: %w", err)
 	}
 
-	if found {
-		log.Warn("bucket exist: %s", bucket)
-	} else {
-		err = mc.MakeBucket(bucket, "")
-		if err != nil {
-			return xerrors.Errorf("creating bucket: %w", err)
-		}
+	if !found {
+		return xerrors.Errorf("bucket not exists: %s", bucket)
 	}
 	return nil
 }
