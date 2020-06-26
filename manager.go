@@ -416,20 +416,6 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID) error
 		return err
 	}
 
-	fetchSel, err := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
-	if err != nil {
-		return xerrors.Errorf("creating fetchSel: %w", err)
-	}
-
-	err = m.sched.Schedule(ctx, sector, sealtasks.TTFetch, fetchSel,
-		schedFetch(sector, stores.FTCache|stores.FTSealed, stores.PathStorage, stores.AcquireMove),
-		func(ctx context.Context, w Worker) error {
-			return w.MoveStorage(ctx, sector)
-		})
-	if err != nil {
-		return xerrors.Errorf("moving sector to storage: %w", err)
-	}
-
 	return nil
 }
 
