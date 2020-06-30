@@ -261,7 +261,10 @@ func (l *LocalWorker) Info(context.Context) (storiface.WorkerInfo, error) {
 
 	h, err := sysinfo.Host()
 	if err != nil {
-		return storiface.WorkerInfo{}, xerrors.Errorf("getting host info: %w", err)
+		if h == nil {
+			return storiface.WorkerInfo{}, xerrors.Errorf("getting host info: %w", err)
+		}
+		log.Warnf("getting host info: %+v", err)
 	}
 
 	mem, err := h.Memory()
