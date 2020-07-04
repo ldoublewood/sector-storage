@@ -423,11 +423,6 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 		}
 
 
-	fetchSel, err := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
-	if err != nil {
-		return xerrors.Errorf("creating fetchSel: %w", err)
-	}
-
 	moveUnsealed := unsealed
 	{
 		if len(keepUnsealed) == 0 {
@@ -443,6 +438,7 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 	if err != nil {
 		return xerrors.Errorf("moving sector to storage: %w", err)
 
+	}
 	}
 	return nil
 }
