@@ -344,6 +344,9 @@ func (a *activeResources) withResources(spt abi.RegisteredSealProof, id WorkerID
 }
 
 func (a *activeResources) add(wr storiface.WorkerResources, r Resources) {
+	if r.CanGPU {
+		a.gpuUsed = false
+	}
 	a.gpuUsed = r.CanGPU
 	if r.MultiThread() {
 		if os.Getenv("SEAL_USE_GPU") != "_yes_" {
