@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
@@ -415,6 +416,12 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 	if err != nil {
 		return err
 	}
+	if os.Getenv("USE_MINIO") != "_yes_" {
+		fetchSel, err := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
+		if err != nil {
+			return xerrors.Errorf("creating fetchSel: %w", err)
+		}
+
 
 	fetchSel, err := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
 	if err != nil {
@@ -435,8 +442,8 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 		})
 	if err != nil {
 		return xerrors.Errorf("moving sector to storage: %w", err)
-	}
 
+	}
 	return nil
 }
 

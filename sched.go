@@ -3,7 +3,9 @@ package sectorstorage
 import (
 	"container/heap"
 	"context"
+	"os"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -371,9 +373,14 @@ func (a *activeResources) withResources(id WorkerID, wr storiface.WorkerResource
 }
 
 func (a *activeResources) add(wr storiface.WorkerResources, r Resources) {
+	if r.CanGPU {
+		a.gpuUsed = false
+	}
 	a.gpuUsed = r.CanGPU
 	if r.MultiThread() {
-		a.cpuUse += wr.CPUs
+		if os.Getenv("SEAL_USE_GPU") != "_yes_" {
+			a.cpuUse += wr.CPUs - getMinusCpu()
+		}
 	} else {
 		a.cpuUse += uint64(r.Threads)
 	}
@@ -387,13 +394,31 @@ func (a *activeResources) free(wr storiface.WorkerResources, r Resources) {
 		a.gpuUsed = false
 	}
 	if r.MultiThread() {
-		a.cpuUse -= wr.CPUs
+		if os.Getenv("SEAL_USE_GPU") != "_yes_" {
+			a.cpuUse -= wr.CPUs - getMinusCpu()
+		}
 	} else {
 		a.cpuUse -= uint64(r.Threads)
 	}
 
 	a.memUsedMin -= r.MinMemory
 	a.memUsedMax -= r.MaxMemory
+}
+func getMinusCpu() uint64 {
+	var minusCpuNum int
+	var err error
+	// use cpu by default
+	minusCpu, ok := os.LookupEnv("SEAL_MINUS_CPU")
+	if !ok {
+		minusCpuNum = 0
+	} else {
+		minusCpuNum, err = strconv.Atoi(minusCpu)
+		if err != nil {
+			log.Warnf("invalid minus cpu number %+v", err)
+			minusCpuNum = 0
+		}
+	}
+	return uint64(minusCpuNum)
 }
 
 func canHandleRequest(needRes Resources, wid WorkerID, res storiface.WorkerResources, active *activeResources) bool {
@@ -412,23 +437,28 @@ func canHandleRequest(needRes Resources, wid WorkerID, res storiface.WorkerResou
 		return false
 	}
 
+	var needCpu uint64 = 0
 	if needRes.MultiThread() {
-		if active.cpuUse > 0 {
-			log.Debugf("sched: not scheduling on worker %d; multicore process needs %d threads, %d in use, target %d", wid, res.CPUs, active.cpuUse, res.CPUs)
-			return false
+		if os.Getenv("SEAL_USE_GPU") != "_yes_" {
+			// should be same as rust code
+			needCpu = res.CPUs - getMinusCpu()
+
+		} else {
+			if len(res.GPUs) > 0 && needRes.CanGPU {
+				if active.gpuUsed {
+					log.Debugf("sched: not scheduling on worker %d; GPU in use", wid)
+					return false
+				}
+			}
+			needCpu = 0
 		}
 	} else {
-		if active.cpuUse+uint64(needRes.Threads) > res.CPUs {
-			log.Debugf("sched: not scheduling on worker %d; not enough threads, need %d, %d in use, target %d", wid, needRes.Threads, active.cpuUse, res.CPUs)
-			return false
-		}
+		needCpu = uint64(needRes.Threads)
 	}
 
-	if len(res.GPUs) > 0 && needRes.CanGPU {
-		if active.gpuUsed {
-			log.Debugf("sched: not scheduling on worker %d; GPU in use", wid)
-			return false
-		}
+	if active.cpuUse+needCpu > res.CPUs {
+		log.Debugf("sched: not scheduling on worker %d; not enough threads, need %d, %d in use, target %d", wid, needRes.Threads, active.cpuUse, res.CPUs)
+		return false
 	}
 
 	return true
