@@ -149,6 +149,7 @@ type activeResources struct {
 	memUsedMax uint64
 	gpuUsed    bool
 	cpuUse     uint64
+	gpuUse     uint64
 
 	cond *sync.Cond
 }
@@ -374,9 +375,9 @@ func (a *activeResources) withResources(id WorkerID, wr storiface.WorkerResource
 
 func (a *activeResources) add(wr storiface.WorkerResources, r Resources) {
 	if r.CanGPU {
-		a.gpuUsed = false
+		a.gpuUsed = true
+		a.gpuUse += 1
 	}
-	a.gpuUsed = r.CanGPU
 	if r.MultiThread() {
 		if os.Getenv("SEAL_USE_GPU") != "_yes_" {
 			a.cpuUse += wr.CPUs - getMinusCpu()
@@ -392,6 +393,7 @@ func (a *activeResources) add(wr storiface.WorkerResources, r Resources) {
 func (a *activeResources) free(wr storiface.WorkerResources, r Resources) {
 	if r.CanGPU {
 		a.gpuUsed = false
+		a.gpuUse -= 1
 	}
 	if r.MultiThread() {
 		if os.Getenv("SEAL_USE_GPU") != "_yes_" {
@@ -420,7 +422,26 @@ func getMinusCpu() uint64 {
 	}
 	return uint64(minusCpuNum)
 }
+func getVirtualGpu(res storiface.WorkerResources) uint64 {
+	return uint64(len(res.GPUs)) + getPlusGpu()
+}
 
+func getPlusGpu() uint64 {
+	var plusGpuNum int
+	var err error
+	// use cpu by default
+	plusGpu, ok := os.LookupEnv("SEAL_PLUS_GPU")
+	if !ok {
+		plusGpuNum = 0
+	} else {
+		plusGpuNum, err = strconv.Atoi(plusGpu)
+		if err != nil {
+			log.Warnf("invalid plus gpu number %+v", err)
+			plusGpuNum = 0
+		}
+	}
+	return uint64(plusGpuNum)
+}
 func canHandleRequest(needRes Resources, wid WorkerID, res storiface.WorkerResources, active *activeResources) bool {
 
 	// TODO: dedupe needRes.BaseMinMemory per task type (don't add if that task is already running)
@@ -438,19 +459,14 @@ func canHandleRequest(needRes Resources, wid WorkerID, res storiface.WorkerResou
 	}
 
 	var needCpu uint64 = 0
+	var needGpu uint64 = 0
 	if needRes.MultiThread() {
 		if os.Getenv("SEAL_USE_GPU") != "_yes_" {
 			// should be same as rust code
 			needCpu = res.CPUs - getMinusCpu()
 
 		} else {
-			if len(res.GPUs) > 0 && needRes.CanGPU {
-				if active.gpuUsed {
-					log.Debugf("sched: not scheduling on worker %d; GPU in use", wid)
-					return false
-				}
-			}
-			needCpu = 0
+			needGpu = 1
 		}
 	} else {
 		needCpu = uint64(needRes.Threads)
@@ -458,6 +474,11 @@ func canHandleRequest(needRes Resources, wid WorkerID, res storiface.WorkerResou
 
 	if active.cpuUse+needCpu > res.CPUs {
 		log.Debugf("sched: not scheduling on worker %d; not enough threads, need %d, %d in use, target %d", wid, needRes.Threads, active.cpuUse, res.CPUs)
+		return false
+	}
+	gpus := getVirtualGpu(res)
+	if active.gpuUse+needGpu > gpus {
+		log.Debugf("sched: not scheduling on worker %d; not enough virtual gpus, need %d, %d in use, target %d", wid, 1, active.gpuUse, gpus)
 		return false
 	}
 
