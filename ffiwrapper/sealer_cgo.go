@@ -143,7 +143,7 @@ func (sb *Sealer) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 
 	pr := io.TeeReader(io.LimitReader(file, int64(pieceSize)), pw)
 
-	chunk := abi.PaddedPieceSize(4 << 20)
+	chunk := abi.PaddedPieceSize(1024 << 20)
 
 	buf := make([]byte, chunk.Unpadded())
 	var pieceCids []abi.PieceInfo
