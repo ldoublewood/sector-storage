@@ -467,6 +467,17 @@ func canHandleRequest(needRes Resources, wid WorkerID, res storiface.WorkerResou
 
 		} else {
 			needGpu = 1
+			gpus := getVirtualGpu(res)
+			if active.gpuUse+needGpu > gpus {
+				if os.Getenv("SEAL_GPU_AUTO_FALLBACK") != "_yes_" {
+					log.Debugf("sched: not scheduling on worker %d; not enough virtual gpus, need %d, %d in use, target %d", wid, 1, active.gpuUse, gpus)
+					return false
+				} else {
+					// fallback to cpu
+					needCpu = res.CPUs - getMinusCpu()
+				}
+			}
+			needCpu = 0
 		}
 	} else {
 		needCpu = uint64(needRes.Threads)
@@ -474,11 +485,6 @@ func canHandleRequest(needRes Resources, wid WorkerID, res storiface.WorkerResou
 
 	if active.cpuUse+needCpu > res.CPUs {
 		log.Debugf("sched: not scheduling on worker %d; not enough threads, need %d, %d in use, target %d", wid, needRes.Threads, active.cpuUse, res.CPUs)
-		return false
-	}
-	gpus := getVirtualGpu(res)
-	if active.gpuUse+needGpu > gpus {
-		log.Debugf("sched: not scheduling on worker %d; not enough virtual gpus, need %d, %d in use, target %d", wid, 1, active.gpuUse, gpus)
 		return false
 	}
 
