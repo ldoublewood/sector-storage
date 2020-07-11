@@ -154,6 +154,13 @@ type activeResources struct {
 	cond *sync.Cond
 }
 
+type usedResources struct {
+	memUsedMin uint64
+	memUsedMax uint64
+	cpuUse     uint64
+	gpuUse     uint64
+}
+
 type workerHandle struct {
 	w Worker
 
@@ -293,14 +300,14 @@ func (sh *scheduler) maybeSchedRequest(req *workerRequest) (bool, error) {
 func (sh *scheduler) assignWorker(wid WorkerID, w *workerHandle, req *workerRequest) error {
 	needRes := ResourceTable[req.taskType][sh.spt]
 
-	w.preparing.add(w.info.Resources, needRes)
+	used := w.preparing.add(w.info.Resources, needRes)
 
 	go func() {
 		err := req.prepare(req.ctx, w.w)
 		sh.workersLk.Lock()
 
 		if err != nil {
-			w.preparing.free(w.info.Resources, needRes)
+			w.preparing.free(used)
 			sh.workersLk.Unlock()
 
 			select {
@@ -320,7 +327,7 @@ func (sh *scheduler) assignWorker(wid WorkerID, w *workerHandle, req *workerRequ
 		}
 
 		err = w.active.withResources(wid, w.info.Resources, needRes, &sh.workersLk, func() error {
-			w.preparing.free(w.info.Resources, needRes)
+			w.preparing.free(used)
 			sh.workersLk.Unlock()
 			defer sh.workersLk.Lock() // we MUST return locked from this function
 
@@ -361,11 +368,11 @@ func (a *activeResources) withResources(id WorkerID, wr storiface.WorkerResource
 		a.cond.Wait()
 	}
 
-	a.add(wr, r)
+	used := a.add(wr, r)
 
 	err := cb()
 
-	a.free(wr, r)
+	a.free(used)
 	if a.cond != nil {
 		a.cond.Broadcast()
 	}
@@ -373,39 +380,27 @@ func (a *activeResources) withResources(id WorkerID, wr storiface.WorkerResource
 	return err
 }
 
-func (a *activeResources) add(wr storiface.WorkerResources, r Resources) {
-	if r.CanGPU {
-		a.gpuUsed = true
-		a.gpuUse += 1
-	}
-	if r.MultiThread() {
-		if os.Getenv("SEAL_USE_GPU") != "_yes_" {
-			a.cpuUse += wr.CPUs - getMinusCpu()
-		}
-	} else {
-		a.cpuUse += uint64(r.Threads)
-	}
-
+func (a *activeResources) add(wr storiface.WorkerResources, r Resources) *usedResources {
+	cpu, gpu := getNeedGpuCpu(r, wr, a)
+	a.cpuUse += cpu
+	a.gpuUse += gpu
 	a.memUsedMin += r.MinMemory
 	a.memUsedMax += r.MaxMemory
+	return &usedResources{
+		memUsedMin: r.MinMemory,
+		memUsedMax: r.MaxMemory,
+		cpuUse:     cpu,
+		gpuUse:     gpu,
+	}
 }
 
-func (a *activeResources) free(wr storiface.WorkerResources, r Resources) {
-	if r.CanGPU {
-		a.gpuUsed = false
-		a.gpuUse -= 1
-	}
-	if r.MultiThread() {
-		if os.Getenv("SEAL_USE_GPU") != "_yes_" {
-			a.cpuUse -= wr.CPUs - getMinusCpu()
-		}
-	} else {
-		a.cpuUse -= uint64(r.Threads)
-	}
-
-	a.memUsedMin -= r.MinMemory
-	a.memUsedMax -= r.MaxMemory
+func (a *activeResources) free(used *usedResources) {
+	a.memUsedMin -= used.memUsedMin
+	a.memUsedMax -= used.memUsedMax
+	a.cpuUse -= used.cpuUse
+	a.gpuUse -= used.gpuUse
 }
+
 func getMinusCpu() uint64 {
 	var minusCpuNum int
 	var err error
@@ -442,6 +437,32 @@ func getPlusGpu() uint64 {
 	}
 	return uint64(plusGpuNum)
 }
+
+func getNeedGpuCpu(needRes Resources, res storiface.WorkerResources, active *activeResources) (cpu uint64, gpu uint64) {
+	fallback := os.Getenv("SEAL_GPU_AUTO_FALLBACK") == "_yes_"
+	gpus := getVirtualGpu(res)
+	if needRes.MultiThread() {
+		if os.Getenv("SEAL_USE_GPU") != "_yes_" || !needRes.CanGPU {
+			cpu = res.CPUs - getMinusCpu()
+			gpu = 0
+		} else {
+			tryNeedGpu := uint64(1)
+			if active.gpuUse+tryNeedGpu > gpus && fallback {
+				// fallback to cpu
+				cpu = res.CPUs - getMinusCpu()
+				gpu = 0
+			} else {
+				cpu = 0
+				gpu = tryNeedGpu
+			}
+		}
+	} else {
+		cpu = uint64(needRes.Threads)
+		gpu = 0
+	}
+	return
+}
+
 func canHandleRequest(needRes Resources, wid WorkerID, res storiface.WorkerResources, active *activeResources) bool {
 
 	// TODO: dedupe needRes.BaseMinMemory per task type (don't add if that task is already running)
@@ -458,32 +479,14 @@ func canHandleRequest(needRes Resources, wid WorkerID, res storiface.WorkerResou
 		return false
 	}
 
-	var needCpu uint64 = 0
-	var needGpu uint64 = 0
-	if needRes.MultiThread() {
-		if os.Getenv("SEAL_USE_GPU") != "_yes_" {
-			// should be same as rust code
-			needCpu = res.CPUs - getMinusCpu()
-
-		} else {
-			needGpu = 1
-			gpus := getVirtualGpu(res)
-			if active.gpuUse+needGpu > gpus {
-				if os.Getenv("SEAL_GPU_AUTO_FALLBACK") != "_yes_" {
-					log.Debugf("sched: not scheduling on worker %d; not enough virtual gpus, need %d, %d in use, target %d", wid, 1, active.gpuUse, gpus)
-					return false
-				} else {
-					// fallback to cpu
-					needCpu = res.CPUs - getMinusCpu()
-				}
-			}
-			needCpu = 0
-		}
-	} else {
-		needCpu = uint64(needRes.Threads)
-	}
+	needCpu, needGpu := getNeedGpuCpu(needRes, res, active)
+	gpus := getVirtualGpu(res)
 
 	if active.cpuUse+needCpu > res.CPUs {
+		log.Debugf("sched: not scheduling on worker %d; not enough threads, need %d, %d in use, target %d", wid, needRes.Threads, active.cpuUse, res.CPUs)
+		return false
+	}
+	if active.gpuUse+needGpu > gpus {
 		log.Debugf("sched: not scheduling on worker %d; not enough threads, need %d, %d in use, target %d", wid, needRes.Threads, active.cpuUse, res.CPUs)
 		return false
 	}
