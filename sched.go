@@ -442,7 +442,7 @@ func getNeedGpuCpu(needRes Resources, res storiface.WorkerResources, active *act
 	fallback := os.Getenv("SEAL_GPU_AUTO_FALLBACK") == "_yes_"
 	gpus := getVirtualGpu(res)
 	if needRes.MultiThread() {
-		if os.Getenv("SEAL_USE_GPU") != "_yes_" || !needRes.CanGPU {
+		if os.Getenv("SEAL_USE_GPU") != "_yes_" || !needRes.CanGPU || len(res.GPUs) == 0 {
 			cpu = res.CPUs - getMinusCpu()
 			gpu = 0
 		} else {
