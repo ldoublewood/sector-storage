@@ -324,8 +324,9 @@ func (m *Manager) SealPreCommit2(ctx context.Context, sector abi.SectorID, phase
 	if err := m.index.StorageLock(ctx, sector, stores.FTSealed, stores.FTCache); err != nil {
 		return storage.SectorCids{}, xerrors.Errorf("acquiring sector lock: %w", err)
 	}
+	disableAllowFetch := os.Getenv("DISABLE_PRE_COMMIT2_ALLOW_FETCH") == "_yes_"
 
-	selector, err := newExistingSelector(ctx, m.index, sector, stores.FTCache|stores.FTSealed, false)
+	selector, err := newExistingSelector(ctx, m.index, sector, stores.FTCache|stores.FTSealed, !disableAllowFetch)
 	if err != nil {
 		return storage.SectorCids{}, xerrors.Errorf("creating path selector: %w", err)
 	}
