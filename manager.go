@@ -320,7 +320,12 @@ func (m *Manager) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticke
 func (m *Manager) SealPreCommit2(ctx context.Context, sector abi.SectorID, phase1Out storage.PreCommit1Out) (out storage.SectorCids, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-
+	var mode stores.AcquireMode
+	if os.Getenv("ENABLE_PRE_COMMIT2_MOVE_CACHE") == "_yes_" {
+		mode = stores.AcquireMoveCache
+	} else {
+		mode = stores.AcquireMove
+	}
 	if err := m.index.StorageLock(ctx, sector, stores.FTSealed, stores.FTCache); err != nil {
 		return storage.SectorCids{}, xerrors.Errorf("acquiring sector lock: %w", err)
 	}
@@ -331,7 +336,7 @@ func (m *Manager) SealPreCommit2(ctx context.Context, sector abi.SectorID, phase
 		return storage.SectorCids{}, xerrors.Errorf("creating path selector: %w", err)
 	}
 
-	err = m.sched.Schedule(ctx, sector, sealtasks.TTPreCommit2, selector, schedFetch(sector, stores.FTCache|stores.FTSealed, stores.PathSealing, stores.AcquireMove), func(ctx context.Context, w Worker) error {
+	err = m.sched.Schedule(ctx, sector, sealtasks.TTPreCommit2, selector, schedFetch(sector, stores.FTCache|stores.FTSealed, stores.PathSealing, mode), func(ctx context.Context, w Worker) error {
 		p, err := w.SealPreCommit2(ctx, sector, phase1Out)
 		if err != nil {
 			return err
