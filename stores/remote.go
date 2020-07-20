@@ -122,7 +122,7 @@ func (r *Remote) AcquireSector(ctx context.Context, s abi.SectorID, spt abi.Regi
 				continue
 			}
 
-			err := tryMoveCache(PathByType(paths, fileType))
+			err := tryMoveCache(PathByType(paths, fileType), fileType.String())
 			if err != nil {
 				return SectorPaths{}, SectorPaths{}, xerrors.Errorf("try move cache error: %w", err)
 			}
@@ -131,7 +131,7 @@ func (r *Remote) AcquireSector(ctx context.Context, s abi.SectorID, spt abi.Regi
 	return paths, stores, nil
 }
 
-func tryMoveCache(path string) error {
+func tryMoveCache(path string, fileType string) error {
 	fi, err := os.Stat(path)
 	if err != nil {
 		return err
@@ -146,7 +146,7 @@ func tryMoveCache(path string) error {
 		log.Panic("env AQUIRE_CACHE_PATH should be set, because AcquireMoveCache is used")
 	}
 
-	return moveAndLink(path, filepath.Join(cacheDir, baseName))
+	return moveAndLink(path, filepath.Join(cacheDir, fileType, baseName))
 }
 
 func (r *Remote) acquireFromRemote(ctx context.Context, s abi.SectorID, spt abi.RegisteredSealProof, fileType SectorFileType, pathType PathType, op AcquireMode) (string, ID, string, error) {

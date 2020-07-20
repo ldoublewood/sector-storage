@@ -72,7 +72,7 @@ func moveAndLink(from, to string) error {
 		return xerrors.Errorf("exec mv (stderr: %s): %w", strings.TrimSpace(errOut.String()), err)
 	}
 
-	cmd = exec.Command("/usr/bin/env", "ln", "-s", toDir, from)
+	cmd = exec.Command("/usr/bin/env", "ln", "-s", to, from)
 	cmd.Stderr = &errOut
 	if err := cmd.Run(); err != nil {
 		return xerrors.Errorf("exec ln (stderr: %s): %w", strings.TrimSpace(errOut.String()), err)
