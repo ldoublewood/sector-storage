@@ -6,6 +6,7 @@ import (
 	"github.com/filecoin-project/sector-storage/fsutil"
 	"io"
 	"net/http"
+	"os"
 
 	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log/v2"
@@ -320,17 +321,23 @@ func (m *Manager) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticke
 func (m *Manager) SealPreCommit2(ctx context.Context, sector abi.SectorID, phase1Out storage.PreCommit1Out) (out storage.SectorCids, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-
+	var mode stores.AcquireMode
+	if os.Getenv("ENABLE_PRE_COMMIT2_MOVE_CACHE") == "_yes_" {
+		mode = stores.AcquireMoveCache
+	} else {
+		mode = stores.AcquireMove
+	}
 	if err := m.index.StorageLock(ctx, sector, stores.FTSealed, stores.FTCache); err != nil {
 		return storage.SectorCids{}, xerrors.Errorf("acquiring sector lock: %w", err)
 	}
+	disableAllowFetch := os.Getenv("DISABLE_PRE_COMMIT2_ALLOW_FETCH") == "_yes_"
 
-	selector, err := newExistingSelector(ctx, m.index, sector, stores.FTCache|stores.FTSealed, true)
+	selector, err := newExistingSelector(ctx, m.index, sector, stores.FTCache|stores.FTSealed, !disableAllowFetch)
 	if err != nil {
 		return storage.SectorCids{}, xerrors.Errorf("creating path selector: %w", err)
 	}
 
-	err = m.sched.Schedule(ctx, sector, sealtasks.TTPreCommit2, selector, schedFetch(sector, stores.FTCache|stores.FTSealed, stores.PathSealing, stores.AcquireMove), func(ctx context.Context, w Worker) error {
+	err = m.sched.Schedule(ctx, sector, sealtasks.TTPreCommit2, selector, schedFetch(sector, stores.FTCache|stores.FTSealed, stores.PathSealing, mode), func(ctx context.Context, w Worker) error {
 		p, err := w.SealPreCommit2(ctx, sector, phase1Out)
 		if err != nil {
 			return err
@@ -416,8 +423,13 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 	if err != nil {
 		return err
 	}
+	if os.Getenv("USE_MINIO") != "_yes_" {
+		fetchSel, err := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
+		if err != nil {
+			return xerrors.Errorf("creating fetchSel: %w", err)
+		}
 
-	fetchSel := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
+
 	moveUnsealed := unsealed
 	{
 		if len(keepUnsealed) == 0 {
@@ -432,8 +444,9 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 		})
 	if err != nil {
 		return xerrors.Errorf("moving sector to storage: %w", err)
-	}
 
+	}
+	}
 	return nil
 }
 

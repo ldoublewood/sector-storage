@@ -5,7 +5,9 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -190,6 +192,32 @@ func (r *workerRequest) respond(err error) {
 	case <-r.ctx.Done():
 		log.Warnf("request got cancelled before we could respond")
 	}
+}
+
+type activeResources struct {
+	memUsedMin uint64
+	memUsedMax uint64
+	gpuUsed    bool
+	cpuUse     uint64
+	gpuUse     uint64
+
+	cond *sync.Cond
+}
+
+type usedResources struct {
+	memUsedMin uint64
+	memUsedMax uint64
+	cpuUse     uint64
+	gpuUse     uint64
+}
+
+type workerHandle struct {
+	w Worker
+
+	info storiface.WorkerInfo
+
+	preparing *activeResources
+	active    *activeResources
 }
 
 func (sh *scheduler) runSched() {
@@ -488,14 +516,14 @@ func (sh *scheduler) runWorker(wid WorkerID) {
 func (sh *scheduler) assignWorker(taskDone chan struct{}, wid WorkerID, w *workerHandle, req *workerRequest) error {
 	needRes := ResourceTable[req.taskType][sh.spt]
 
-	w.preparing.add(w.info.Resources, needRes)
+	used := w.preparing.add(w.info.Resources, needRes)
 
 	go func() {
 		err := req.prepare(req.ctx, w.wt.worker(w.w))
 		sh.workersLk.Lock()
 
 		if err != nil {
-			w.preparing.free(w.info.Resources, needRes)
+			w.preparing.free(used)
 			sh.workersLk.Unlock()
 
 			select {
@@ -515,7 +543,7 @@ func (sh *scheduler) assignWorker(taskDone chan struct{}, wid WorkerID, w *worke
 		}
 
 		err = w.active.withResources(wid, w.info.Resources, needRes, &sh.workersLk, func() error {
-			w.preparing.free(w.info.Resources, needRes)
+			w.preparing.free(used)
 			sh.workersLk.Unlock()
 			defer sh.workersLk.Lock() // we MUST return locked from this function
 
@@ -546,6 +574,159 @@ func (sh *scheduler) assignWorker(taskDone chan struct{}, wid WorkerID, w *worke
 	}()
 
 	return nil
+}
+
+func (a *activeResources) withResources(id WorkerID, wr storiface.WorkerResources, r Resources, locker sync.Locker, cb func() error) error {
+	for !canHandleRequest(r, id, wr, a) {
+		if a.cond == nil {
+			a.cond = sync.NewCond(locker)
+		}
+		a.cond.Wait()
+	}
+
+	used := a.add(wr, r)
+
+	err := cb()
+
+	a.free(used)
+	if a.cond != nil {
+		a.cond.Broadcast()
+	}
+
+	return err
+}
+
+func (a *activeResources) add(wr storiface.WorkerResources, r Resources) *usedResources {
+	cpu, gpu := getNeedGpuCpu(r, wr, a)
+	a.cpuUse += cpu
+	a.gpuUse += gpu
+	a.memUsedMin += r.MinMemory
+	a.memUsedMax += r.MaxMemory
+	return &usedResources{
+		memUsedMin: r.MinMemory,
+		memUsedMax: r.MaxMemory,
+		cpuUse:     cpu,
+		gpuUse:     gpu,
+	}
+}
+
+func (a *activeResources) free(used *usedResources) {
+	a.memUsedMin -= used.memUsedMin
+	a.memUsedMax -= used.memUsedMax
+	a.cpuUse -= used.cpuUse
+	a.gpuUse -= used.gpuUse
+}
+
+func getMinusCpu() uint64 {
+	var minusCpuNum int
+	var err error
+	// use cpu by default
+	minusCpu, ok := os.LookupEnv("SEAL_MINUS_CPU")
+	if !ok {
+		minusCpuNum = 0
+	} else {
+		minusCpuNum, err = strconv.Atoi(minusCpu)
+		if err != nil {
+			log.Warnf("invalid minus cpu number %+v", err)
+			minusCpuNum = 0
+		}
+	}
+	return uint64(minusCpuNum)
+}
+func getVirtualGpu(res storiface.WorkerResources) uint64 {
+	return uint64(len(res.GPUs)) + getPlusGpu()
+}
+
+func getPlusGpu() uint64 {
+	var plusGpuNum int
+	var err error
+	// use cpu by default
+	plusGpu, ok := os.LookupEnv("SEAL_PLUS_GPU")
+	if !ok {
+		plusGpuNum = 0
+	} else {
+		plusGpuNum, err = strconv.Atoi(plusGpu)
+		if err != nil {
+			log.Warnf("invalid plus gpu number %+v", err)
+			plusGpuNum = 0
+		}
+	}
+	return uint64(plusGpuNum)
+}
+
+func getNeedGpuCpu(needRes Resources, res storiface.WorkerResources, active *activeResources) (cpu uint64, gpu uint64) {
+	fallback := os.Getenv("SEAL_GPU_AUTO_FALLBACK") == "_yes_"
+	gpus := getVirtualGpu(res)
+	if needRes.MultiThread() {
+		if os.Getenv("SEAL_USE_GPU") != "_yes_" || !needRes.CanGPU || len(res.GPUs) == 0 {
+			cpu = res.CPUs - getMinusCpu()
+			gpu = 0
+		} else {
+			tryNeedGpu := uint64(1)
+			if active.gpuUse+tryNeedGpu > gpus && fallback {
+				// fallback to cpu
+				cpu = res.CPUs - getMinusCpu()
+				gpu = 0
+			} else {
+				cpu = 0
+				gpu = tryNeedGpu
+			}
+		}
+	} else {
+		cpu = uint64(needRes.Threads)
+		gpu = 0
+	}
+	return
+}
+
+func canHandleRequest(needRes Resources, wid WorkerID, res storiface.WorkerResources, active *activeResources) bool {
+
+	// TODO: dedupe needRes.BaseMinMemory per task type (don't add if that task is already running)
+	minNeedMem := res.MemReserved + active.memUsedMin + needRes.MinMemory + needRes.BaseMinMemory
+	if minNeedMem > res.MemPhysical {
+		log.Debugf("sched: not scheduling on worker %d; not enough physical memory - need: %dM, have %dM", wid, minNeedMem/mib, res.MemPhysical/mib)
+		return false
+	}
+
+	maxNeedMem := res.MemReserved + active.memUsedMax + needRes.MaxMemory + needRes.BaseMinMemory
+
+	if maxNeedMem > res.MemSwap+res.MemPhysical {
+		log.Debugf("sched: not scheduling on worker %d; not enough virtual memory - need: %dM, have %dM", wid, maxNeedMem/mib, (res.MemSwap+res.MemPhysical)/mib)
+		return false
+	}
+
+	needCpu, needGpu := getNeedGpuCpu(needRes, res, active)
+	gpus := getVirtualGpu(res)
+
+	if active.cpuUse+needCpu > res.CPUs {
+		log.Debugf("sched: not scheduling on worker %d; not enough threads, need %d, %d in use, target %d", wid, needRes.Threads, active.cpuUse, res.CPUs)
+		return false
+	}
+	if active.gpuUse+needGpu > gpus {
+		log.Debugf("sched: not scheduling on worker %d; not enough threads, need %d, %d in use, target %d", wid, needRes.Threads, active.cpuUse, res.CPUs)
+		return false
+	}
+
+	return true
+}
+
+func (a *activeResources) utilization(wr storiface.WorkerResources) float64 {
+	var max float64
+
+	cpu := float64(a.cpuUse) / float64(wr.CPUs)
+	max = cpu
+
+	memMin := float64(a.memUsedMin+wr.MemReserved) / float64(wr.MemPhysical)
+	if memMin > max {
+		max = memMin
+	}
+
+	memMax := float64(a.memUsedMax+wr.MemReserved) / float64(wr.MemPhysical+wr.MemSwap)
+	if memMax > max {
+		max = memMax
+	}
+
+	return max
 }
 
 func (sh *scheduler) newWorker(w *workerHandle) {
