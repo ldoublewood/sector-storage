@@ -109,6 +109,7 @@ type activeResources struct {
 	memUsedMax uint64
 	gpuUsed    bool
 	cpuUse     uint64
+	gpuUse     uint64
 
 	cond *sync.Cond
 }
@@ -194,30 +195,11 @@ func (r *workerRequest) respond(err error) {
 	}
 }
 
-type activeResources struct {
-	memUsedMin uint64
-	memUsedMax uint64
-	gpuUsed    bool
-	cpuUse     uint64
-	gpuUse     uint64
-
-	cond *sync.Cond
-}
-
 type usedResources struct {
 	memUsedMin uint64
 	memUsedMax uint64
 	cpuUse     uint64
 	gpuUse     uint64
-}
-
-type workerHandle struct {
-	w Worker
-
-	info storiface.WorkerInfo
-
-	preparing *activeResources
-	active    *activeResources
 }
 
 func (sh *scheduler) runSched() {
@@ -576,46 +558,6 @@ func (sh *scheduler) assignWorker(taskDone chan struct{}, wid WorkerID, w *worke
 	return nil
 }
 
-func (a *activeResources) withResources(id WorkerID, wr storiface.WorkerResources, r Resources, locker sync.Locker, cb func() error) error {
-	for !canHandleRequest(r, id, wr, a) {
-		if a.cond == nil {
-			a.cond = sync.NewCond(locker)
-		}
-		a.cond.Wait()
-	}
-
-	used := a.add(wr, r)
-
-	err := cb()
-
-	a.free(used)
-	if a.cond != nil {
-		a.cond.Broadcast()
-	}
-
-	return err
-}
-
-func (a *activeResources) add(wr storiface.WorkerResources, r Resources) *usedResources {
-	cpu, gpu := getNeedGpuCpu(r, wr, a)
-	a.cpuUse += cpu
-	a.gpuUse += gpu
-	a.memUsedMin += r.MinMemory
-	a.memUsedMax += r.MaxMemory
-	return &usedResources{
-		memUsedMin: r.MinMemory,
-		memUsedMax: r.MaxMemory,
-		cpuUse:     cpu,
-		gpuUse:     gpu,
-	}
-}
-
-func (a *activeResources) free(used *usedResources) {
-	a.memUsedMin -= used.memUsedMin
-	a.memUsedMax -= used.memUsedMax
-	a.cpuUse -= used.cpuUse
-	a.gpuUse -= used.gpuUse
-}
 
 func getMinusCpu() uint64 {
 	var minusCpuNum int
@@ -677,56 +619,6 @@ func getNeedGpuCpu(needRes Resources, res storiface.WorkerResources, active *act
 		gpu = 0
 	}
 	return
-}
-
-func canHandleRequest(needRes Resources, wid WorkerID, res storiface.WorkerResources, active *activeResources) bool {
-
-	// TODO: dedupe needRes.BaseMinMemory per task type (don't add if that task is already running)
-	minNeedMem := res.MemReserved + active.memUsedMin + needRes.MinMemory + needRes.BaseMinMemory
-	if minNeedMem > res.MemPhysical {
-		log.Debugf("sched: not scheduling on worker %d; not enough physical memory - need: %dM, have %dM", wid, minNeedMem/mib, res.MemPhysical/mib)
-		return false
-	}
-
-	maxNeedMem := res.MemReserved + active.memUsedMax + needRes.MaxMemory + needRes.BaseMinMemory
-
-	if maxNeedMem > res.MemSwap+res.MemPhysical {
-		log.Debugf("sched: not scheduling on worker %d; not enough virtual memory - need: %dM, have %dM", wid, maxNeedMem/mib, (res.MemSwap+res.MemPhysical)/mib)
-		return false
-	}
-
-	needCpu, needGpu := getNeedGpuCpu(needRes, res, active)
-	gpus := getVirtualGpu(res)
-
-	if active.cpuUse+needCpu > res.CPUs {
-		log.Debugf("sched: not scheduling on worker %d; not enough threads, need %d, %d in use, target %d", wid, needRes.Threads, active.cpuUse, res.CPUs)
-		return false
-	}
-	if active.gpuUse+needGpu > gpus {
-		log.Debugf("sched: not scheduling on worker %d; not enough threads, need %d, %d in use, target %d", wid, needRes.Threads, active.cpuUse, res.CPUs)
-		return false
-	}
-
-	return true
-}
-
-func (a *activeResources) utilization(wr storiface.WorkerResources) float64 {
-	var max float64
-
-	cpu := float64(a.cpuUse) / float64(wr.CPUs)
-	max = cpu
-
-	memMin := float64(a.memUsedMin+wr.MemReserved) / float64(wr.MemPhysical)
-	if memMin > max {
-		max = memMin
-	}
-
-	memMax := float64(a.memUsedMax+wr.MemReserved) / float64(wr.MemPhysical+wr.MemSwap)
-	if memMax > max {
-		max = memMax
-	}
-
-	return max
 }
 
 func (sh *scheduler) newWorker(w *workerHandle) {
