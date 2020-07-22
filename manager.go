@@ -421,11 +421,7 @@ func (m *Manager) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 		return err
 	}
 	if os.Getenv("USE_MINIO") != "_yes_" {
-		fetchSel, err := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
-		if err != nil {
-			return xerrors.Errorf("creating fetchSel: %w", err)
-		}
-
+		fetchSel := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed, stores.PathStorage)
 
 	moveUnsealed := unsealed
 	{
