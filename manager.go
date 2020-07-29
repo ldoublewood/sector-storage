@@ -322,7 +322,14 @@ func (m *Manager) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticke
 
 	selector := newAllocSelector(m.index, stores.FTCache|stores.FTSealed, stores.PathSealing)
 
-	err = m.sched.Schedule(ctx, sector, sealtasks.TTPreCommit1, selector, schedFetch(sector, stores.FTUnsealed, stores.PathSealing, stores.AcquireMove), func(ctx context.Context, w Worker) error {
+	prepare := schedFetch(sector, stores.FTUnsealed, stores.PathSealing, stores.AcquireMove)
+	if os.Getenv("NOADDPIECE") != "" {
+		log.Infof("GARBAGE Manager SealPreCommit1 env NOADDPIECE:%v\n", os.Getenv("NOADDPIECE"))
+		prepare = schedNop
+
+	}
+	// err = m.sched.Schedule(ctx, sector, sealtasks.TTPreCommit1, selector, schedFetch(sector, stores.FTUnsealed, stores.PathSealing, stores.AcquireMove), func(ctx context.Context, w Worker) error {
+	err = m.sched.Schedule(ctx, sector, sealtasks.TTPreCommit1, selector, prepare, func(ctx context.Context, w Worker) error {
 		p, err := w.SealPreCommit1(ctx, sector, ticket, pieces)
 		if err != nil {
 			return err
