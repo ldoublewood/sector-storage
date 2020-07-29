@@ -139,7 +139,7 @@ func (l *LocalWorker) Fetch(ctx context.Context, sector abi.SectorID, fileType s
 	return nil
 }
 
-func (l *LocalWorker) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticket abi.SealRandomness, pieces []abi.PieceInfo) (out storage2.PreCommit1Out, err error) {
+func (l *LocalWorker) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticket abi.SealRandomness, pieces []abi.PieceInfo, noaddpiece ...bool) (out storage2.PreCommit1Out, err error) {
 	{
 		// cleanup previous failed attempts if they exist
 		if err := l.storage.Remove(ctx, sector, stores.FTSealed, true); err != nil {
@@ -151,7 +151,12 @@ func (l *LocalWorker) SealPreCommit1(ctx context.Context, sector abi.SectorID, t
 		}
 	}
 
-	if os.Getenv("SECTORINFO") != "" {
+	noaddpieceP := false
+	if len(noaddpiece) > 0 {
+		noaddpieceP = bool(noaddpiece[0])
+	}
+
+	if os.Getenv("SECTORINFO") != "" && noaddpieceP {
 		tpaths := stores.SectorPaths{}
 		info := strings.Split(os.Getenv("SECTORINFO"), "|")
 		infostr := "GARBAGE Sealer SealPreCommit1"
