@@ -35,12 +35,23 @@ type LocalWorker struct {
 	sindex     stores.SectorIndex
 
 	acceptTasks map[sealtasks.TaskType]struct{}
+
+	minerStorageId stores.ID
 }
 
 func NewLocalWorker(wcfg WorkerConfig, store stores.Store, local *stores.Local, sindex stores.SectorIndex) *LocalWorker {
 	acceptTasks := map[sealtasks.TaskType]struct{}{}
 	for _, taskType := range wcfg.TaskTypes {
 		acceptTasks[taskType] = struct{}{}
+	}
+
+	var minerStorageId string
+	if _, ok := os.LookupEnv("MINIO_ENDPOINT"); ok {
+		var found bool
+		minerStorageId, found = os.LookupEnv("SHARED_MINER_STORAGE_ID")
+		if !found {
+			log.Panic("env SHARED_MINER_STORAGE_ID should be set, because env MINIO_ENDPOINT is set")
+		}
 	}
 
 	return &LocalWorker{
@@ -52,6 +63,7 @@ func NewLocalWorker(wcfg WorkerConfig, store stores.Store, local *stores.Local, 
 		sindex:     sindex,
 
 		acceptTasks: acceptTasks,
+		minerStorageId: stores.ID(minerStorageId),
 	}
 }
 
@@ -179,12 +191,30 @@ func (l *LocalWorker) FinalizeSector(ctx context.Context, sector abi.SectorID, k
 		return xerrors.Errorf("finalizing sector: %w", err)
 	}
 
+
 	if len(keepUnsealed) == 0 {
 		if err := l.storage.Remove(ctx, sector, stores.FTUnsealed, true); err != nil {
 			return xerrors.Errorf("removing unsealed data: %w", err)
 		}
 	}
 
+	if len(l.minerStorageId) != 0 {
+
+		if err := l.storage.Remove(ctx, sector, stores.FTUnsealed, true); err != nil {
+			return xerrors.Errorf("removing unsealed data: %w", err)
+		}
+		if err := l.storage.Remove(ctx, sector, stores.FTCache, true); err != nil {
+			return xerrors.Errorf("removing cache data: %w", err)
+		}
+		if err := l.storage.Remove(ctx, sector, stores.FTSealed, true); err != nil {
+			return xerrors.Errorf("removing sealed data: %w", err)
+		}
+
+		err = l.sindex.StorageDeclareSector(ctx, l.minerStorageId, sector, stores.FTCache|stores.FTSealed, true)
+		if err != nil {
+			return xerrors.Errorf("declare shared sector: %w", err)
+		}
+	}
 	return nil
 }
 
