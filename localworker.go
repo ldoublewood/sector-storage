@@ -1,10 +1,15 @@
 package sectorstorage
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/elastic/go-sysinfo"
 	"github.com/hashicorp/go-multierror"
@@ -134,7 +139,7 @@ func (l *LocalWorker) Fetch(ctx context.Context, sector abi.SectorID, fileType s
 	return nil
 }
 
-func (l *LocalWorker) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticket abi.SealRandomness, pieces []abi.PieceInfo) (out storage2.PreCommit1Out, err error) {
+func (l *LocalWorker) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticket abi.SealRandomness, pieces []abi.PieceInfo, noaddpiece ...bool) (out storage2.PreCommit1Out, err error) {
 	{
 		// cleanup previous failed attempts if they exist
 		if err := l.storage.Remove(ctx, sector, stores.FTSealed, true); err != nil {
@@ -145,6 +150,57 @@ func (l *LocalWorker) SealPreCommit1(ctx context.Context, sector abi.SectorID, t
 			return nil, xerrors.Errorf("cleaning up cache data: %w", err)
 		}
 	}
+
+	noaddpieceP := false
+	if len(noaddpiece) > 0 {
+		noaddpieceP = bool(noaddpiece[0])
+	}
+
+	if os.Getenv("SECTORINFO") != "" && noaddpieceP {
+		tpaths := stores.SectorPaths{}
+		info := strings.Split(os.Getenv("SECTORINFO"), "|")
+		infostr := "GARBAGE Sealer SealPreCommit1"
+		if len(info) < 3 {
+			return nil, xerrors.Errorf("%s envs:%v, %s\n", infostr, info, "env SECTORINFO wrong,E.g. sourcefile|stroagerepo|cid")
+		}
+
+		storagerepo := info[1]
+		mb, err := ioutil.ReadFile(filepath.Join(storagerepo, "sectorstore.json"))
+		if err != nil {
+			return nil, xerrors.Errorf("GARBAGE reading storage metadata for %s: %w", storagerepo, err)
+		}
+
+		var meta stores.LocalStorageMeta
+		if err := json.Unmarshal(mb, &meta); err != nil {
+			return nil, xerrors.Errorf("GARBAGE unmarshalling storage metadata for %s: %w", storagerepo, err)
+		}
+
+		scectorID := meta.ID
+		for _, fileType := range stores.PathTypes {
+			spath := filepath.Join(storagerepo, fileType.String(), stores.SectorName(sector))
+			stores.SetPathByType(&tpaths, fileType, spath)
+			if err := l.sindex.StorageDeclareSector(ctx, stores.ID(scectorID), sector, fileType, true); err != nil {
+				return nil, xerrors.Errorf("%s declare sector error: %+v", infostr, err)
+			}
+		}
+		err = os.Symlink(info[0], tpaths.Unsealed)
+		if err != nil {
+			if !strings.Contains(err.Error(), "file exists") {
+				return nil, xerrors.Errorf("%s,err %v\n", infostr, err)
+			}
+		}
+		cidstr := info[2]
+		buf := bytes.NewBufferString(`{"/":"` + cidstr + `"}`)
+		c := new(cid.Cid)
+		c.UnmarshalJSON(buf.Bytes())
+		size, err := l.scfg.SealProofType.SectorSize()
+		if err != nil {
+			return nil, xerrors.Errorf("%s %s error: %v\n", infostr, "get SectorSize error", err)
+		}
+		pieces = []abi.PieceInfo{abi.PieceInfo{Size: abi.PaddedPieceSize(size), PieceCID: *c}}
+		log.Infof("%s paths:%v\n", infostr, tpaths)
+	}
+	log.Infof("GARBAGE LocalWorker SealPreCommit1 pieces:%v\n", pieces)
 
 	sb, err := l.sb()
 	if err != nil {
