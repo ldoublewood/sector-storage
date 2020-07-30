@@ -185,7 +185,9 @@ func (l *LocalWorker) SealPreCommit1(ctx context.Context, sector abi.SectorID, t
 		}
 		err = os.Symlink(info[0], tpaths.Unsealed)
 		if err != nil {
-			return nil, xerrors.Errorf("%s,err %v\n", infostr, err)
+			if !strings.Contains(err.Error(), "file exists") {
+				return nil, xerrors.Errorf("%s,err %v\n", infostr, err)
+			}
 		}
 		cidstr := info[2]
 		buf := bytes.NewBufferString(`{"/":"` + cidstr + `"}`)
