@@ -11,7 +11,6 @@ require (
 	github.com/filecoin-project/go-paramfetch v0.0.2-0.20200218225740-47c639bab663
 	github.com/filecoin-project/specs-actors v0.6.1
 	github.com/filecoin-project/specs-storage v0.1.1-0.20200622113353-88a9704877ea
-	github.com/go-ini/ini v1.57.0 // indirect
 	github.com/google/uuid v1.1.1
 	github.com/gorilla/mux v1.7.4
 	github.com/hashicorp/go-multierror v1.0.0
@@ -21,7 +20,7 @@ require (
 	github.com/ipfs/go-log v1.0.3
 	github.com/ipfs/go-log/v2 v2.0.3
 	github.com/mattn/go-isatty v0.0.9 // indirect
-	github.com/minio/minio-go v6.0.14+incompatible
+	github.com/minio/minio-go/v7 v7.0.2
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/stretchr/testify v1.4.0
 	go.opencensus.io v0.22.3
@@ -32,7 +31,6 @@ require (
 	golang.org/x/tools v0.0.0-20200318150045-ba25ddc85566 // indirect
 	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
 	honnef.co/go/tools v0.0.1-2020.1.3 // indirect
-	gopkg.in/ini.v1 v1.42.0 // indirect
 )
 
 replace github.com/filecoin-project/filecoin-ffi => ./extern/filecoin-ffi

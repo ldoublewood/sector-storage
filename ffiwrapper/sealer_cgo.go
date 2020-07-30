@@ -6,7 +6,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"github.com/minio/minio-go"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"io"
 	"io/ioutil"
 	"math/bits"
@@ -50,7 +51,7 @@ func New(sectors SectorProvider, cfg *Config) (*Sealer, error) {
 			return nil, xerrors.Errorf("env MINIO_SECRET_KEY is not set")
 		}
 
-		mc, err = minio.New(ep, accessKey, secretKey, false)
+		mc, err = minio.New(ep, &minio.Options{Creds: credentials.NewStaticV4(accessKey, secretKey, ""), Secure: false})
 		if err != nil {
 			return nil, xerrors.Errorf("initialize minio client: %w", err)
 		}
@@ -72,7 +73,6 @@ func New(sectors SectorProvider, cfg *Config) (*Sealer, error) {
 		stopping: make(chan struct{}),
 
 		mc: mc,
-
 	}
 
 	return sb, nil
@@ -611,7 +611,7 @@ func (sb *Sealer) FinalizeSector(ctx context.Context, sector abi.SectorID, keepU
 }
 
 func ensureBucketExist(mc *minio.Client, bucket string) error {
-	found, err := mc.BucketExists(bucket)
+	found, err := mc.BucketExists(context.Background(), bucket)
 	if err != nil {
 		return xerrors.Errorf("checking bucket exists: %w", err)
 	}
@@ -621,7 +621,6 @@ func ensureBucketExist(mc *minio.Client, bucket string) error {
 	}
 	return nil
 }
-
 
 func (sb *Sealer) ReleaseUnsealed(ctx context.Context, sector abi.SectorID, safeToFree []storage.Range) error {
 	// This call is meant to mark storage as 'freeable'. Given that unsealing is
@@ -637,7 +636,6 @@ func (sb *Sealer) Remove(ctx context.Context, sector abi.SectorID) error {
 	return xerrors.Errorf("not supported at this layer") // happens in localworker
 }
 
-
 func (sb *Sealer) uploadToStore(paths stores.SectorPaths, sector abi.SectorID) error {
 	var err error
 
@@ -647,20 +645,17 @@ func (sb *Sealer) uploadToStore(paths stores.SectorPaths, sector abi.SectorID) e
 	}
 
 	for _, file := range files {
-		if _, err = sb.mc.FPutObject(stores.FTCache.String(), filepath.Join(stores.SectorName(sector), file.Name()), filepath.Join(paths.Cache, file.Name()), minio.PutObjectOptions{}); err != nil {
+		if _, err = sb.mc.FPutObject(context.Background(), stores.FTCache.String(), filepath.Join(stores.SectorName(sector), file.Name()), filepath.Join(paths.Cache, file.Name()), minio.PutObjectOptions{}); err != nil {
 			return xerrors.Errorf("putting object to cache bucket: %w", err)
 		}
 	}
 
-
-	if _, err = sb.mc.FPutObject(stores.FTSealed.String(), stores.SectorName(sector), paths.Sealed, minio.PutObjectOptions{}); err != nil {
+	if _, err = sb.mc.FPutObject(context.Background(), stores.FTSealed.String(), stores.SectorName(sector), paths.Sealed, minio.PutObjectOptions{}); err != nil {
 		return xerrors.Errorf("putting object to sealed bucket: %w", err)
 	}
 
 	return nil
 }
-
-
 
 func GeneratePieceCIDFromFile(proofType abi.RegisteredSealProof, piece io.Reader, pieceSize abi.UnpaddedPieceSize) (cid.Cid, error) {
 	f, werr, err := ToReadableFile(piece, int64(pieceSize))
