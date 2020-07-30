@@ -3,7 +3,7 @@ package ffiwrapper
 import (
 	"github.com/filecoin-project/specs-actors/actors/abi"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/minio/minio-go"
+	"github.com/minio/minio-go/v7"
 )
 
 var log = logging.Logger("ffiwrapper")
