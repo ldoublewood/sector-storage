@@ -296,7 +296,7 @@ func (m *Manager) AddPiece(ctx context.Context, sector abi.SectorID, existingPie
 	return out, err
 }
 
-func (m *Manager) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticket abi.SealRandomness, pieces []abi.PieceInfo, noaddpiece ...bool) (out storage.PreCommit1Out, err error) {
+func (m *Manager) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticket abi.SealRandomness, pieces []abi.PieceInfo, noaddpiece bool) (out storage.PreCommit1Out, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -309,18 +309,15 @@ func (m *Manager) SealPreCommit1(ctx context.Context, sector abi.SectorID, ticke
 	selector := newAllocSelector(ctx, m.index, stores.FTCache|stores.FTSealed, stores.PathSealing)
 
 	prepare := schedFetch(sector, stores.FTUnsealed, stores.PathSealing, stores.AcquireMove)
-	noaddpieceP := false
-	if len(noaddpiece) > 0 {
-		noaddpieceP = bool(noaddpiece[0])
-	}
-	if os.Getenv("NOADDPIECE") != "" && noaddpieceP {
+
+	if os.Getenv("NOADDPIECE") != "" && noaddpiece {
 		log.Infof("GARBAGE Manager SealPreCommit1 env NOADDPIECE:%v\n", os.Getenv("NOADDPIECE"))
 		prepare = schedNop
 
 	}
 	// err = m.sched.Schedule(ctx, sector, sealtasks.TTPreCommit1, selector, schedFetch(sector, stores.FTUnsealed, stores.PathSealing, stores.AcquireMove), func(ctx context.Context, w Worker) error {
 	err = m.sched.Schedule(ctx, sector, sealtasks.TTPreCommit1, selector, prepare, func(ctx context.Context, w Worker) error {
-		p, err := w.SealPreCommit1(ctx, sector, ticket, pieces, noaddpieceP)
+		p, err := w.SealPreCommit1(ctx, sector, ticket, pieces, noaddpiece)
 		if err != nil {
 			return err
 		}
