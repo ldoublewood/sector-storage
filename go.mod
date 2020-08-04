@@ -33,3 +33,7 @@ require (
 )
 
 replace github.com/filecoin-project/filecoin-ffi => ./extern/filecoin-ffi
+
+replace github.com/filecoin-project/storage-fsm => ./extern/storage-fsm
+
+replace github.com/filecoin-project/specs-storage => ./extern/specs-storage
