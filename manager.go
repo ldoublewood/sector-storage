@@ -42,6 +42,8 @@ type Worker interface {
 	// Returns paths accessible to the worker
 	Paths(context.Context) ([]stores.StoragePath, error)
 
+	CheckFsStat(context.Context, abi.RegisteredSealProof, sealtasks.TaskType) bool
+
 	Info(context.Context) (storiface.WorkerInfo, error)
 
 	// returns channel signalling worker shutdown

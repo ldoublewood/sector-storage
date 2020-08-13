@@ -315,6 +315,13 @@ func (sh *scheduler) trySched() {
 			}
 
 			rpcCtx, cancel := context.WithTimeout(task.ctx, SelectorTimeout)
+
+			if task.taskType == sealtasks.TTPreCommit1 || task.taskType == sealtasks.TTPreCommit2 {
+				if !worker.w.CheckFsStat(rpcCtx, sh.spt, task.taskType) {
+					continue
+				}
+			}
+
 			ok, err := task.sel.Ok(rpcCtx, task.taskType, sh.spt, worker)
 			cancel()
 			if err != nil {

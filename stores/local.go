@@ -14,6 +14,7 @@ import (
 	"golang.org/x/xerrors"
 
 	"github.com/filecoin-project/sector-storage/fsutil"
+	"github.com/filecoin-project/sector-storage/sealtasks"
 	"github.com/filecoin-project/specs-actors/actors/abi"
 )
 
@@ -587,6 +588,44 @@ func (st *Local) FsStat(ctx context.Context, id ID) (fsutil.FsStat, error) {
 	}
 
 	return p.stat(st.localStorage)
+}
+
+var needSpece = map[abi.RegisteredSealProof]map[sealtasks.TaskType]int64{
+	abi.RegisteredSealProof_StackedDrg2KiBV1: {
+		sealtasks.TTPreCommit1: 2 * 14 * 1 << 10,
+		sealtasks.TTPreCommit2: 2 * 14 * 1 << 10,
+	},
+	abi.RegisteredSealProof_StackedDrg8MiBV1: {
+		sealtasks.TTPreCommit1: 8 * 14 * 1 << 20,
+		sealtasks.TTPreCommit2: 8 * 14 * 1 << 20,
+	},
+	abi.RegisteredSealProof_StackedDrg512MiBV1: {
+		sealtasks.TTPreCommit1: 512 * 14 * 1 << 20,
+		sealtasks.TTPreCommit2: 512 * 14 * 1 << 20,
+	},
+	abi.RegisteredSealProof_StackedDrg32GiBV1: {
+		sealtasks.TTPreCommit1: 32 * 14 * 1 << 30,
+		sealtasks.TTPreCommit2: 32 * 14 << 30,
+	},
+	abi.RegisteredSealProof_StackedDrg64GiBV1: {
+		sealtasks.TTPreCommit1: 64 * 14 * 1 << 30,
+		sealtasks.TTPreCommit2: 64 * 14 * 1 << 30,
+	},
+}
+
+func (st *Local) CheckFsStat(ctx context.Context, spt abi.RegisteredSealProof, task sealtasks.TaskType) bool {
+
+	for id, p := range st.paths {
+		sts, err := p.stat(st.localStorage)
+		if err != nil {
+			log.Warnf("CheckFsStat storageID: %v, error:%v\n", id, err)
+			continue
+		}
+		if sts.Available >= needSpece[spt][task] {
+			return true
+		}
+	}
+	return false
 }
 
 var _ Store = &Local{}
